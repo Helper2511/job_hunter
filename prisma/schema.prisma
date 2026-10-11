@@ -1,0 +1,332 @@
+// JobHunt Hub data model.
+// Jobs and companies are a shared pool; everything else is scoped to one user.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Better Auth core tables + app profile fields on User)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  alertAddress String? @unique // private forwarding address for job alert emails
+  linkedinUrl  String?
+  naukriUrl    String?
+  glassdoorUrl String?
+  savedSearchUrls String[] // platform saved-search URLs the user pasted
+  phone        String?
+  noticePeriod String?
+  gmailAddress String? // address resumes are sent from, once Gmail is connected
+
+  workModes    String[] // onsite | hybrid | remote
+  locations    String[]
+  companyTypes String[] // preferred: saas | product | services | manufacturing | other
+  roles        String[]
+
+  dailyEmailLimit Int     @default(20)
+  notifyByEmail   Boolean @default(true)
+  onboardedAt     DateTime?
+
+  sessions      Session[]
+  accounts      Account[]
+  savedSearches SavedSearch[]
+  resumes       Resume[]
+  applications  Application[]
+  watchlist     CompanyWatch[]
+  corrections   CompanyTypeCorrection[]
+  hiddenJobs    HiddenJob[]
+  inboundEmails InboundEmail[]
+  notifications Notification[]
+  usage         UsageCounter[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String? // encrypted at rest by Better Auth
+  refreshToken          String? // encrypted at rest by Better Auth
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
+model Resume {
+  id          String   @id @default(cuid())
+  userId      String
+  label       String
+  filePath    String // object path in the private bucket; served through signed URLs
+  fileName    String
+  roleType    String? // e.g. "frontend"; picked by default for matching job titles
+  isDefault   Boolean  @default(false)
+  textContent String? // extracted text, used for cover notes and skills gap
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  applications Application[]
+
+  @@index([userId])
+}
+
+model Company {
+  id         String  @id @default(cuid())
+  name       String
+  domain     String? @unique
+  careersUrl String?
+  atsType    String? // greenhouse | lever | ashby | smartrecruiters | recruitee | workable | custom
+  atsToken   String?
+  hrEmail    String?
+
+  companyType       String    @default("unknown") // saas | product | services | manufacturing | other | unknown
+  companyTypeSource String? // rule | llm | reviewed
+  companyTypeReason String? // one line shown to the user
+  industry          String? // short label, for example "Fintech"
+  typeCheckedAt     DateTime?
+
+  checkStatus String? // ok | manual | error
+  checkError  String?
+  lastChecked DateTime?
+  createdAt   DateTime  @default(now())
+
+  jobs        Job[]
+  watchers    CompanyWatch[]
+  corrections CompanyTypeCorrection[]
+
+  @@index([name])
+  @@index([companyType])
+}
+
+model Job {
+  id            String    @id @default(cuid())
+  companyId     String
+  title         String
+  location      String? // raw text from the listing
+  cities        String[] // normalized, one or more
+  country       String?
+  workMode      String    @default("unknown") // onsite | hybrid | remote | unknown
+  remoteScope   String? // india | worldwide
+  url           String
+  applyUrl      String?
+  source        String // linkedin | naukri | glassdoor | career_page | manual | aggregator
+  visibility    String    @default("UNCHECKED") // CAREER_PAGE_ONLY | BOTH | PLATFORM_ONLY | UNCHECKED
+  description   String?
+  experienceMin Int?
+  experienceMax Int?
+  salaryText    String?
+  salaryMin     Int? // annual, in the listing's currency units
+  postedAt      DateTime?
+  firstSeenAt   DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  closedAt      DateTime? // no longer listed by its source
+  dedupeKey     String // hash(company + normalizedTitle + normalizedLocation)
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  applications Application[]
+  hiddenBy     HiddenJob[]
+
+  @@unique([dedupeKey, source])
+  @@index([dedupeKey])
+  @@index([workMode])
+  @@index([companyId])
+  @@index([firstSeenAt])
+  @@index([cities], type: Gin)
+}
+
+model Application {
+  id         String    @id @default(cuid())
+  userId     String
+  jobId      String
+  resumeId   String?
+  method     String // email | apply_link | manual | saved
+  status     String    @default("APPLIED") // SAVED | APPLIED | INTERVIEW | OFFER | REJECTED
+  appliedAt  DateTime  @default(now())
+  followUpAt DateTime?
+  followUpNotifiedAt DateTime?
+  notes      String?
+  emailTo      String?
+  emailSubject String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  prep       InterviewPrep?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job        Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume     Resume?   @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+}
+
+model CompanyWatch {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+}
+
+model CompanyTypeCorrection {
+  id        String   @id @default(cuid())
+  userId    String
+  companyId String
+  type      String // the type this user says is correct
+  status    String   @default("pending") // pending | accepted | rejected
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+}
+
+model SavedSearch {
+  id           String    @id @default(cuid())
+  userId       String
+  name         String
+  query        Json // a JobQuery
+  notify       Boolean   @default(false)
+  lastNotified DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model InterviewPrep {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  roleSummary   String?
+  skillsGap     String[]
+  studyList     String[]
+  questions     Json // [{ id, type, question, answer, draft }]
+  companyNotes  String?
+  checklist     Json // [{ id, label, done }]
+  interviewAt   DateTime?
+  roundType     String?
+  interviewers  String?
+  roundNotes    String?
+  generatedBy   String? // llm | rules
+  reminderDaySent  Boolean @default(false)
+  reminderHourSent Boolean @default(false)
+  updatedAt     DateTime    @updatedAt
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model HiddenJob {
+  id        String   @id @default(cuid())
+  userId    String
+  jobId     String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+}
+
+// Forwarded job alert emails. Raw content is deleted after 7 days.
+model InboundEmail {
+  id          String    @id @default(cuid())
+  userId      String
+  fromAddress String
+  subject     String
+  textBody    String?
+  htmlBody    String?
+  kind        String // alert | forwarding_confirmation | other
+  source      String? // linkedin | naukri | glassdoor
+  jobsFound   Int       @default(0)
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, receivedAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  body      String?
+  url       String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// Per-user daily usage, for email and LLM limits.
+model UsageCounter {
+  id     String @id @default(cuid())
+  userId String
+  day    String // YYYY-MM-DD (UTC)
+  kind   String // email | llm
+  count  Int    @default(0)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day, kind])
+}
+
+// Shared cache for career-page and job-board fetches (12 hour TTL).
+model FetchCache {
+  url       String   @id
+  status    Int
+  body      String
+  fetchedAt DateTime @default(now())
+}
