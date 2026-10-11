@@ -7,6 +7,7 @@ import { placeLabel } from "@/lib/jobs/format";
 import { CareerPageOnlyTag } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { COMPANY_TYPE_LABEL, SOURCE_LABEL, WORK_MODE_LABEL } from "@/lib/constants";
+import { CORRECTION_QUORUM } from "@/lib/companies/corrections";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { relativeDate } from "@/lib/utils";
@@ -59,7 +60,10 @@ export default async function CompanyPage({ params }: Params) {
   const career = jobs.filter((j) => j.source === "career_page");
   const platform = jobs.filter((j) => j.source !== "career_page");
   const type = correction?.type ?? company.companyType;
-  const reason = correction ? "Set by you, waiting for review" : company.companyTypeReason;
+  const reason =
+    !correction || correction.status === "accepted"
+      ? company.companyTypeReason
+      : `Set by you. It changes for everyone once ${CORRECTION_QUORUM} people agree.`;
 
   const careerEmpty =
     company.checkStatus === "manual"

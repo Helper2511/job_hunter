@@ -11,6 +11,7 @@ import { mapRecruitee } from "@/lib/ats/recruitee";
 import { mapSmartRecruiters } from "@/lib/ats/smartrecruiters";
 import { normalizePosting } from "@/lib/ats/types";
 import { mapWorkable } from "@/lib/ats/workable";
+import { mapWorkday, workdayBoardUrl, workdayPostedOn } from "@/lib/ats/workday";
 
 describe("detecting the job board", () => {
   it.each([
@@ -22,6 +23,8 @@ describe("detecting the job board", () => {
     ["https://careers.smartrecruiters.com/Globex1", "smartrecruiters", "Globex1"],
     ["https://initech.recruitee.com/o/frontend", "recruitee", "initech"],
     ["https://apply.workable.com/umbrella/j/ABC123/", "workable", "umbrella"],
+    ["https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/job/Pune/Engineer_R123", "workday", "acme.wd5/AcmeCareers"],
+    ["https://acme.wd1.myworkdayjobs.com/External", "workday", "acme.wd1/External"],
   ])("%s", (input, type, token) => {
     expect(detectAts(input)).toEqual({ type, token });
   });
@@ -75,6 +78,32 @@ describe("board adapters", () => {
     const [p] = mapWorkable({ jobs: [{ title: "Designer", shortcode: "AB12", city: "Gurgaon", country: "India", telecommuting: false, workplace: "hybrid" }] }, "umbrella");
     expect(p.url).toBe("https://apply.workable.com/umbrella/j/AB12/");
     expect(normalizePosting(p, { name: "U" })).toMatchObject({ workMode: "hybrid", cities: ["Gurugram"] });
+  });
+});
+
+describe("Workday", () => {
+  const now = new Date("2026-10-11T00:00:00Z");
+  it("maps postings and builds job links", () => {
+    const out = mapWorkday(
+      {
+        total: 2,
+        jobPostings: [
+          { title: "Software Engineer", externalPath: "/job/Pune/Software-Engineer_R1", locationsText: "Pune, India", postedOn: "Posted 3 Days Ago", remoteType: "Hybrid" },
+          { title: "Analyst", externalPath: "/job/Mumbai/Analyst_R2", locationsText: "2 Locations", postedOn: "Posted Today" },
+        ],
+      },
+      "acme.wd5/AcmeCareers",
+      now,
+    );
+    expect(out[0]).toMatchObject({ url: "https://acme.wd5.myworkdayjobs.com/AcmeCareers/job/Pune/Software-Engineer_R1", location: "Pune, India" });
+    expect(out[0].postedAt).toEqual(new Date("2026-10-08T00:00:00Z"));
+    expect(normalizePosting(out[0], { name: "Acme" })).toMatchObject({ workMode: "hybrid", cities: ["Pune"] });
+    expect(out[1].location).toBeNull();
+  });
+  it("parses relative dates and board links", () => {
+    expect(workdayPostedOn("Posted 30+ Days Ago", now)).toEqual(new Date("2026-09-11T00:00:00Z"));
+    expect(workdayPostedOn("Posted Yesterday", now)).toEqual(new Date("2026-10-10T00:00:00Z"));
+    expect(workdayBoardUrl("acme.wd5/AcmeCareers")).toBe("https://acme.wd5.myworkdayjobs.com/AcmeCareers");
   });
 });
 

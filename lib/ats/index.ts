@@ -5,6 +5,7 @@ import { fetchRecruitee } from "./recruitee";
 import { fetchSmartRecruiters } from "./smartrecruiters";
 import type { AtsType, RawPosting } from "./types";
 import { fetchWorkable } from "./workable";
+import { fetchWorkday, workdayBoardUrl } from "./workday";
 
 export const ATS_FETCHERS: Record<AtsType, (token: string) => Promise<RawPosting[]>> = {
   greenhouse: fetchGreenhouse,
@@ -13,6 +14,7 @@ export const ATS_FETCHERS: Record<AtsType, (token: string) => Promise<RawPosting
   smartrecruiters: fetchSmartRecruiters,
   recruitee: fetchRecruitee,
   workable: fetchWorkable,
+  workday: fetchWorkday,
 };
 
 export const ATS_BOARD_URL: Record<AtsType, (token: string) => string> = {
@@ -22,6 +24,7 @@ export const ATS_BOARD_URL: Record<AtsType, (token: string) => string> = {
   smartrecruiters: (t) => `https://careers.smartrecruiters.com/${t}`,
   recruitee: (t) => `https://${t}.recruitee.com`,
   workable: (t) => `https://apply.workable.com/${t}`,
+  workday: workdayBoardUrl,
 };
 
 export type { AtsType, RawPosting };

@@ -3,7 +3,7 @@ import { parseLocation } from "@/lib/matching/cities";
 import { parseExperience, parseSalary } from "@/lib/matching/normalize";
 import { detectRemoteScope, detectWorkMode } from "@/lib/matching/workMode";
 
-export type AtsType = "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "recruitee" | "workable";
+export type AtsType = "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "recruitee" | "workable" | "workday";
 
 /** A posting as read from a job board, before normalisation. */
 export interface RawPosting {

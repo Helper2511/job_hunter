@@ -79,6 +79,8 @@ export interface PoliteFetchOptions {
   checkRobots?: boolean;
   accept?: string;
   bypassCache?: boolean;
+  /** JSON body; sends a POST. Some job boards (Workday) only answer searches by POST. */
+  jsonBody?: unknown;
 }
 
 export async function politeFetch(
@@ -87,9 +89,11 @@ export async function politeFetch(
 ): Promise<{ status: number; body: string; url: string }> {
   const url = new URL(input);
   if (!["http:", "https:"].includes(url.protocol)) throw new FetchError("Only web addresses are supported");
+  const body = opts.jsonBody === undefined ? undefined : JSON.stringify(opts.jsonBody);
+  const cacheKey = body ? `${url.toString()}#${body}` : url.toString();
 
   if (!opts.bypassCache) {
-    const cached = await readCache(url.toString());
+    const cached = await readCache(cacheKey);
     if (cached) return { status: cached.status, body: cached.body, url: url.toString() };
   }
 
@@ -101,9 +105,12 @@ export async function politeFetch(
   let res: Response;
   try {
     res = await fetch(url, {
+      method: body ? "POST" : "GET",
+      body,
       headers: {
         "User-Agent": BOT_USER_AGENT,
         Accept: opts.accept ?? "text/html,application/json;q=0.9,*/*;q=0.8",
+        ...(body ? { "Content-Type": "application/json" } : {}),
       },
       redirect: "follow",
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -112,7 +119,7 @@ export async function politeFetch(
     throw new FetchError("Could not reach this page");
   }
   const text = (await res.text()).slice(0, MAX_BODY);
-  if (res.ok) await writeCache(url.toString(), res.status, text);
+  if (res.ok) await writeCache(cacheKey, res.status, text);
   return { status: res.status, body: text, url: res.url || url.toString() };
 }
 

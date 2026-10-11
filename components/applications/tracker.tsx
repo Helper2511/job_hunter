@@ -111,7 +111,11 @@ function DraggableCard({ card, onMove, onDelete }: { card: TrackerCard; onMove: 
 function Column({ status, cards, children }: { status: ApplicationStatus; cards: TrackerCard[]; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   return (
-    <section ref={setNodeRef} aria-label={STATUS_LABEL[status]} className={cn("flex min-w-0 flex-col rounded-[8px] bg-border/30 p-2", isOver && "bg-accent-soft/50")}>
+    <section
+      ref={setNodeRef}
+      aria-label={STATUS_LABEL[status]}
+      className={cn("flex w-64 shrink-0 flex-col rounded-[8px] bg-border/30 p-2", isOver && "bg-accent-soft/50")}
+    >
       <h2 className="mb-2 flex items-center justify-between px-1">
         <StatusBadge status={status} />
         <span className="tabular text-small text-muted">{cards.length}</span>
@@ -123,6 +127,12 @@ function Column({ status, cards, children }: { status: ApplicationStatus; cards:
 
 export function Tracker({ initial }: { initial: TrackerCard[] }) {
   const [cards, setCards] = useState(initial);
+  const [synced, setSynced] = useState(initial);
+  if (synced !== initial) {
+    // Fresh data from the server (after router.refresh) replaces optimistic state.
+    setSynced(initial);
+    setCards(initial);
+  }
   const [rejectedOpen, setRejectedOpen] = useState(false);
   const move = useMove(setCards);
   const router = useRouter();
@@ -161,7 +171,7 @@ export function Tracker({ initial }: { initial: TrackerCard[] }) {
     <>
       {/* Desktop: board */}
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <div className="hidden gap-3 lg:grid lg:grid-cols-5">
+        <div className="hidden gap-3 overflow-x-auto pb-2 lg:flex">
           {APPLICATION_STATUSES.map((s) => {
             const list = byStatus(s);
             const collapsed = s === "REJECTED" && !rejectedOpen;

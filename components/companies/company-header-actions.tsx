@@ -23,8 +23,8 @@ export function ChangeTypeMenu({ companyId, label }: { companyId: string; label:
             key={t.value}
             onSelect={() =>
               start(async () => {
-                await correctCompanyType(companyId, t.value as CompanyType);
-                toast.success(`Set to ${t.label} for you. Sent for review.`);
+                const res = await correctCompanyType(companyId, t.value as CompanyType);
+                toast.success(res.shared ? `Set to ${t.label} for everyone.` : `Set to ${t.label} for you. Sent for review.`);
                 router.refresh();
               })
             }

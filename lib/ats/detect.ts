@@ -19,10 +19,15 @@ const PATTERNS: { type: AtsType; re: RegExp }[] = [
   { type: "recruitee", re: /\/\/([a-z0-9-]+)\.recruitee\.com/i },
 ];
 
+// Workday boards live at {tenant}.{wdN}.myworkdayjobs.com/{locale?}/{site}; the token keeps all three parts.
+const WORKDAY = /([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com\/(?:wday\/cxs\/[a-z0-9_-]+\/)?(?:[a-z]{2}-[A-Z]{2}\/)?([A-Za-z0-9_-]+)/;
+
 const IGNORED_TOKENS = new Set(["embed", "api", "js", "v1", "j", "jobs", "careers", "www", "static", "assets"]);
 
 /** Detect a known job board from a URL or a page's HTML. */
 export function detectAts(text: string): AtsMatch | null {
+  const wd = text.match(WORKDAY);
+  if (wd && !IGNORED_TOKENS.has(wd[3].toLowerCase())) return { type: "workday", token: `${wd[1]}.${wd[2]}/${wd[3]}` };
   for (const { type, re } of PATTERNS) {
     const m = text.match(re);
     if (m && m[1] && !IGNORED_TOKENS.has(m[1].toLowerCase())) {

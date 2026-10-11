@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { checkCompany } from "@/lib/companies/check";
+import { applyCorrectionsIfAgreed } from "@/lib/companies/corrections";
 import { requireUser } from "@/lib/session";
 
 export async function watchCompany(companyId: string) {
@@ -28,7 +29,7 @@ const TYPES = ["saas", "product", "services", "manufacturing", "other"] as const
 
 /**
  * A user's correction applies to their own view at once and is saved for
- * review before it changes the shared value.
+ * review; it changes the shared value once enough users agree.
  */
 export async function correctCompanyType(companyId: string, type: (typeof TYPES)[number]) {
   const user = await requireUser();
@@ -38,9 +39,10 @@ export async function correctCompanyType(companyId: string, type: (typeof TYPES)
     create: { userId: user.id, companyId, type },
     update: { type, status: "pending", createdAt: new Date() },
   });
+  const shared = await applyCorrectionsIfAgreed(companyId);
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
-  return { ok: true };
+  return { ok: true, shared };
 }
 
 export async function recheckCompany(companyId: string) {

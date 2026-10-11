@@ -12,9 +12,9 @@ PostgreSQL (Supabase), Better Auth, Inngest, Postmark and the Vercel AI SDK.
 | Area | What it does |
 |---|---|
 | Jobs | Search with work mode chips, multi-city location picker (aliases, Delhi NCR, radius), company type, remote scope, experience, date posted, source, salary and "Career page only". Filters live in the URL. Saved searches with daily alerts. Two-pane view on desktop, full-page detail on phones, Up/Down keyboard navigation. |
-| Career-page checker | Finds a company's careers page, detects Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee and Workable boards and calls their public endpoints. Otherwise reads `JobPosting` JSON-LD, then job links in the HTML, then (optionally) an LLM. Client-rendered pages are marked "Check manually". Respects `robots.txt`, 1 request/second per domain, 12-hour cache. |
+| Career-page checker | Finds a company's careers page, detects Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee, Workable and Workday boards and calls their public endpoints. Otherwise reads `JobPosting` JSON-LD, then job links in the HTML, then (optionally) an LLM. Client-rendered pages are marked "Check manually". Respects `robots.txt`, 1 request/second per domain, 12-hour cache. |
 | Compare and flag | Fuzzy title + location matching marks each role `CAREER_PAGE_ONLY`, `BOTH` or `PLATFORM_ONLY`. |
-| Company type | SaaS / Product / Services / Manufacturing / Other, by website rules first, then LLM at confidence ≥ 0.7. Users can correct a type for their own view; corrections are stored for review. |
+| Company type | SaaS / Product / Services / Manufacturing / Other, by website rules first, then LLM at confidence ≥ 0.7. Users can correct a type for their own view; once 3 people agree, it becomes the shared value. |
 | Alert intake | Each user gets a private forwarding address. Postmark posts forwarded alert emails to `/api/inbound/email`; parsers for LinkedIn, Naukri and Glassdoor turn them into jobs. Raw emails are deleted after 7 days. |
 | Apply | Apply link with copy-ready answers and resume download, or an editable email draft sent through Gmail (`gmail.send` scope only). Max 20 emails a day, one per company per role. Every send is an explicit click. |
 | Tracker | Board (drag and drop, plus a "Move to" menu) on desktop, grouped list on phones. Follow-up reminders. |
@@ -61,6 +61,29 @@ Without Inngest the app still works: alert emails and company checks run inline.
   sensitive scope, so a public launch needs Google's app verification; until then only test users can connect Gmail.
   Start verification early.
 
+## Deploying
+
+The app is built for **Vercel** (hosting), **Supabase** (Postgres + resume storage), **Inngest** (background jobs)
+and **Postmark** (inbound alert emails and notifications). Every push to `main` deploys; pull requests get preview URLs.
+
+1. **Supabase**: create a project. Copy the pooled connection string to `DATABASE_URL` and the direct one to
+   `DIRECT_URL`. In Storage, create a **private** bucket called `resumes`. Copy the project URL and service-role key.
+2. **Vercel**: import the GitHub repository (framework is detected as Next.js). Add every variable from
+   `.env.example` under Project → Settings → Environment Variables, with `BETTER_AUTH_URL` and
+   `NEXT_PUBLIC_APP_URL` set to the production domain. The `vercel-build` script generates the Prisma client, applies
+   pending migrations and builds, so the database schema is always in step with the code.
+3. **Sign-in providers**: add `https://<domain>/api/auth/callback/google` and `.../linkedin` as redirect URLs in the
+   Google Cloud and LinkedIn developer consoles. Submit the Google app for verification (needed for `gmail.send`).
+4. **Inngest**: install the Inngest integration from the Vercel marketplace. It sets `INNGEST_EVENT_KEY` and
+   `INNGEST_SIGNING_KEY` and syncs `/api/inngest` on every deploy, which turns on the daily career-page checks,
+   alert parsing and reminders.
+5. **Postmark**: verify a sender address for notifications (`POSTMARK_FROM_ADDRESS`). For alerts, point an MX record
+   for `INBOUND_EMAIL_DOMAIN` (for example `in.yourapp.com`) at Postmark's inbound server and set the inbound webhook to
+   `https://<domain>/api/inbound/email?token=<POSTMARK_INBOUND_SECRET>`.
+6. Optional: `LLM_API_KEY` for AI drafting and `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` for error reports.
+
+Career-page checks call other companies' sites, so the server needs normal outbound internet access (Vercel has it).
+
 ## Scripts
 
 | Command | |
@@ -68,7 +91,7 @@ Without Inngest the app still works: alert emails and company checks run inline.
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm run lint` / `typecheck` | ESLint, TypeScript |
 | `npm test` | Vitest unit tests (parsers, adapters, matching, filters, flagging) |
-| `npm run test:e2e` | Playwright. Signed-in flows need `E2E_SESSION_COOKIE`; set `PW_CHROMIUM_PATH` to use a preinstalled Chromium |
+| `npm run test:e2e` | Playwright. With a database, `BETTER_AUTH_SECRET` and `E2E_SEED=1` it seeds a test user and runs the signed-in flows too (CI does this). `PW_CHROMIUM_PATH` points at a preinstalled Chromium |
 | `npm run db:migrate` / `db:deploy` / `db:seed` | Prisma |
 
 ## Project layout
@@ -94,7 +117,8 @@ tests/               unit (Vitest) and e2e (Playwright)
   auto-applies. Platform jobs arrive through the alert emails you forward; "Apply" opens the platform's own page.
 - Alert email formats change without notice. The parsers are tested against sample emails in `tests/fixtures`;
   add real samples there when a format changes.
-- Career pages rendered entirely in the browser (and Workday, Darwinbox, Keka, Zoho Recruit) show "Check manually"
-  for now.
+- Career pages rendered entirely in the browser (and Darwinbox, Keka, Zoho Recruit) show "Check manually" for now.
+- The Workday adapter follows Workday's public career-site endpoint but was tested only against sample responses;
+  check it with one real Workday company before relying on it.
 
 The product brief and design guide are in `docs/`.

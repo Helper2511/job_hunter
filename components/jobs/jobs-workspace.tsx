@@ -36,15 +36,27 @@ interface Props {
 type Result = { key: string } & ({ status: "error" } | { status: "ready"; jobs: JobCardData[]; truncated: boolean });
 type State = { status: "loading" } | Result;
 
+const PAGE_SIZE = 200;
+const MAX_JOBS = 1000;
+
 export function JobsWorkspace({ children, defaults, savedCities, savedSearches }: Props) {
   const { query, setQuery, queryString } = useJobQuery();
   const pathname = usePathname();
   const router = useRouter();
   const selectedId = pathname.startsWith("/jobs/") ? pathname.split("/")[2] : null;
   const [reload, setReload] = useState(0);
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const [limitFor, setLimitFor] = useState(queryString);
+  if (limitFor !== queryString) {
+    // New filters start again from the first page.
+    setLimitFor(queryString);
+    setLimit(PAGE_SIZE);
+  }
   const [result, setResult] = useState<Result | null>(null);
-  const requestKey = `${queryString}#${reload}`;
-  const state: State = result && result.key === requestKey ? result : { status: "loading" };
+  const requestKey = `${queryString}#${reload}#${limit}`;
+  // While "Load more" runs, keep showing the jobs already loaded for these filters.
+  const loadingMore = Boolean(result && result.key !== requestKey && result.status === "ready" && result.key.startsWith(`${queryString}#${reload}#`));
+  const state: State = result && (result.key === requestKey || loadingMore) ? result : { status: "loading" };
   const [keywords, setKeywords] = useState(query.keywords);
   const [syncedKeywords, setSyncedKeywords] = useState(query.keywords);
   if (syncedKeywords !== query.keywords) {
@@ -64,8 +76,10 @@ export function JobsWorkspace({ children, defaults, savedCities, savedSearches }
 
   useEffect(() => {
     const controller = new AbortController();
-    const key = `${queryString}#${reload}`;
-    fetch(`/api/jobs/search?${queryString}`, { signal: controller.signal })
+    const key = `${queryString}#${reload}#${limit}`;
+    const params = new URLSearchParams(queryString);
+    params.set("limit", String(limit));
+    fetch(`/api/jobs/search?${params}`, { signal: controller.signal })
       .then(async (r) => {
         if (!r.ok) throw new Error();
         const data = (await r.json()) as { jobs: JobCardData[]; truncated: boolean };
@@ -75,7 +89,7 @@ export function JobsWorkspace({ children, defaults, savedCities, savedSearches }
         if ((err as Error).name !== "AbortError") setResult({ key, status: "error" });
       });
     return () => controller.abort();
-  }, [queryString, reload]);
+  }, [queryString, reload, limit]);
 
   const jobs = state.status === "ready" ? state.jobs : [];
   const href = useCallback((id: string) => `/jobs/${id}${queryString ? `?${queryString}` : ""}`, [queryString]);
@@ -248,6 +262,16 @@ export function JobsWorkspace({ children, defaults, savedCities, savedSearches }
               ))}
             </ul>
           )}
+
+          {state.status === "ready" && state.truncated && limit < MAX_JOBS ? (
+            <div className="mt-3 flex justify-center">
+              <Button variant="secondary" disabled={loadingMore} onClick={() => setLimit((n) => Math.min(n + PAGE_SIZE, MAX_JOBS))}>
+                {loadingMore ? "Loading…" : "Load more jobs"}
+              </Button>
+            </div>
+          ) : state.status === "ready" && state.truncated ? (
+            <p className="mt-3 text-center text-small text-muted">Showing the newest {MAX_JOBS}. Add a filter to narrow the list.</p>
+          ) : null}
 
           {deepLinks.length ? (
             <div className="mt-4 rounded-[8px] border border-border p-3">

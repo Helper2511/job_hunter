@@ -4,6 +4,7 @@ const port = Number(process.env.PORT ?? 3000);
 
 export default defineConfig({
   testDir: "tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   use: {
